@@ -24,7 +24,9 @@ transect_data=read.csv('./data/Tatoosh_Intertidal_Transitions_Transects.txt', se
   mutate(month=substring(date, 1,3), year=as.integer(substring(date, 5,6))) %>% #Make dates usuable
   mutate(year=ifelse(year<90, year+2000,year+1900)) %>%
   filter(month %in% c('May','Jul','Jun'), year<=2012) %>%
-  select(-month, -date)
+  select(-month, -date) %>%
+  mutate(point_id=paste(Transect, Point.Number, sep='-')) %>% #Interpret multiple transects as one giant transect
+  select(-Transect, -Point.Number)
 
 
 quad_data=read.csv('./data/Tatoosh_Intertidal_Transitions_Quadrats.txt', sep='\t') %>%
@@ -49,8 +51,11 @@ all_species=quad_data %>%
 
 set_id=1
 model_sets=data.frame()
+all_point_ids=sort(unique(transect_data$point_id))
+num_points=length(all_point_ids)
+
 for(this_spatial_scale in spatial_scales){
-  num_replicates = floor(30/this_spatial_scale)
+  num_replicates = floor(num_points/this_spatial_scale)
   
   replicate_identifier=c() #rep is short for replicate
   for(i in 1:this_spatial_scale){
@@ -59,16 +64,16 @@ for(this_spatial_scale in spatial_scales){
   replicate_identifier = sort(replicate_identifier)
   
   #Fill in when the spatial scale isn't a divisor to 30
-  while(length(replicate_identifier)<30){
+  while(length(replicate_identifier)<num_points){
     replicate_identifier = c(replicate_identifier, -1)
   }
   
-  for(this_transect in unique(transect_data$Transect)){
-    temp_df=data.frame('Transect'=this_transect, Point.Number=1:30, replicate=replicate_identifier,
-                       'spatial_scale'=this_spatial_scale, set=set_id)
-    model_sets = model_sets %>%
+
+  temp_df=data.frame(point_id=all_point_ids, replicate=replicate_identifier,
+                     'spatial_scale'=this_spatial_scale, set=set_id)
+  model_sets = model_sets %>%
       bind_rows(temp_df)
-  }
+  
   
   set_id=set_id+1
 }
@@ -76,7 +81,7 @@ for(this_spatial_scale in spatial_scales){
 model_sets = model_sets %>%
   filter(replicate >0)
 
-rm(this_spatial_scale, num_replicates, replicate_identifier, this_transect, temp_df,i)
+rm(this_spatial_scale, num_replicates, replicate_identifier, num_points, all_point_ids, temp_df,i)
 #####################################
 #Build the matrix model out of the quad data.
 
@@ -208,28 +213,26 @@ run_analysis=function(){
       filter(set==this_set) 
     
     for(this_replicate in sort(unique(this_set_list$replicate))){
-      this_replicate_list = this_set_list %>%
-        filter(replicate==this_replicate)
-      
-      this_replicate_point_numbers= this_replicate_list %>%
-        select(Point.Number) %>%
+
+      this_replicate_point_ids= this_set_list %>%
+        filter(replicate==this_replicate) %>%
+        select(point_id) %>%
         distinct() %>%
-        extract2('Point.Number')
+        extract2('point_id')
       
-      for(this_transect in unique(this_replicate_list$Transect)){
-        actual_composition=transect_data %>%
-          filter(Transect == this_transect, Point.Number %in% this_replicate_point_numbers) %>%
-          create_composition_timeseries()
+      actual_composition=transect_data %>%
+        filter(point_id %in% this_replicate_point_ids) %>%
+        create_composition_timeseries()
         
-        predicted_composition = run_model(transitions, actual_composition[,1], ncol(actual_composition))
-        results_this_transect=compare_composition(actual_composition, predicted_composition)
+      predicted_composition = run_model(transitions, actual_composition[,1], ncol(actual_composition))
+      results_this_replicate=compare_composition(actual_composition, predicted_composition)
         
-        results_this_transect$Transect=this_transect
-        results_this_transect$set=this_set
+      results_this_replicate$set=this_set
+      results_this_replicate$replicate=this_replicate
         
-        final_results = final_results %>%
-          bind_rows(results_this_transect)
-      }
+      final_results = final_results %>%
+        bind_rows(results_this_replicate)
+      
     }
     
   }
