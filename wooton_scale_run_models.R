@@ -234,7 +234,11 @@ run_analysis=function(){
     
   }
 
-return(final_results)
+  final_results = final_results %>%
+    left_join( select(model_sets, set, spatial_scale) %>% distinct(), by='set') %>%
+    filter(!is.na(mse)) #some na values from missing year
+  
+  return(final_results)
 }
 
 if(!file.exists(results_file)){
