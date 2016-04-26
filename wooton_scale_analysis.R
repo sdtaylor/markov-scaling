@@ -119,3 +119,33 @@ run_model=function(model, initial_conditions, timesteps){
 }
 
 ######################################################
+#Metrics for composition comparison
+
+#mean squared error
+mse=function(actual, predicted){
+  mean((actual-predicted)^2)
+}
+
+#Euclidean distance
+eucl_dist=function(actual, predicted){
+  sqrt(sum((actual-predicted)^2))
+}
+
+######################################################
+#Compare precicted and observed timeseries' of composition
+#returns a dataframe of different accuracies over the time series
+compare_composition=function(observed, predicted){
+  if(!all(dim(observed)==dim(predicted))){stop('observed and predicted rows and/or columns do not match')}
+  
+  results=data.frame()
+  for(this_col in seq(ncol(observed))){
+    this_mse=mse(observed[,this_col], predicted[,this_col])
+    this_eucl=eucl_dist(observed[,this_col], predicted[,this_col])
+    
+    results = results %>%
+      bind_rows(data.frame(timestep=this_col, mse=this_mse, eucl_dist=this_eucl))
+  }
+  
+  return(results)
+}
+
