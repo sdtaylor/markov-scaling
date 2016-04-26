@@ -104,3 +104,18 @@ transitions = transitions %>%
 
 rm(quad_data_next_year, transitions_temp, this_species, x)
 ########################################################
+#Run the markov model given a set of inital conditions and timesteps.
+#Return a timeseries of community composition
+
+run_model=function(model, initial_conditions, timesteps){
+  results=matrix(nrow=14, ncol=timesteps)
+  community_state=initial_conditions
+  for(i in seq(timesteps)){
+    community_state = model %*% community_state
+    results[,i]=community_state
+  }
+  colnames(results) = seq(timesteps)
+  return(results)
+}
+
+######################################################
