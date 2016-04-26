@@ -1,5 +1,6 @@
 library(dplyr)
 library(tidyr)
+library(magrittr)
 
 #######################################
 #Config
@@ -21,7 +22,9 @@ transect_data=read.csv('./data/Tatoosh_Intertidal_Transitions_Transects.txt', se
   rename(species=AGGREGATED.GROUP) %>%
   filter(species!='X', !is.na(species)) %>%
   mutate(month=substring(date, 1,3), year=as.integer(substring(date, 5,6))) %>% #Make dates usuable
-  mutate(year=ifelse(year<90, year+2000,year+1900))
+  mutate(year=ifelse(year<90, year+2000,year+1900)) %>%
+  filter(month %in% c('May','Jul','Jun'), year<=2012) %>%
+  select(-month, -date)
 
 
 quad_data=read.csv('./data/Tatoosh_Intertidal_Transitions_Quadrats.txt', sep='\t') %>%
@@ -35,6 +38,12 @@ quad_data=read.csv('./data/Tatoosh_Intertidal_Transitions_Quadrats.txt', sep='\t
   mutate(year=ifelse(year<90, year+2000,year+1900))  %>%
   select(-date)
 
+#list of species needed to fill in various things
+all_species=quad_data %>% 
+  select(species) %>%
+  distinct() %>%
+  arrange() %>%
+  extract2('species')
 #######################################
 #Setup the spatial scales to model at
 
@@ -148,4 +157,51 @@ compare_composition=function(observed, predicted){
   
   return(results)
 }
+
+#####################################################
+#Create a matrix time series of actual compostion for a community given a dataframe
+#subset of transect_data
+
+create_composition_timeseries=function(df){
+  #A list of years that includes missing ones
+  years = min(df$year):max(df$year)
+  
+  yearly_composition=matrix(nrow=length(all_species), ncol=length(years))
+  colnames(yearly_composition) = years
+
+  for(i in seq_along(years)){
+    this_year=years[i]
+    x=df %>%
+      filter(year==this_year)
+    
+    #Put in NA's for missing years
+    if(nrow(x)==0){
+      x=rep(NA, length(all_species))
+    } else {
+      x = x %>%
+        group_by(species) %>%
+        summarize(n=n()) %>%
+        ungroup() %>%
+        mutate(percent_cover=n/sum(n)) %>% #Percent cover of species actually present
+        right_join(data.frame(species=all_species), by='species') %>% #Add in the rest of the species and fill in 0's for cover
+        mutate(percent_cover = ifelse(is.na(percent_cover), 0, percent_cover)) %>%
+        arrange(species) %>%
+        extract2('percent_cover')
+    }
+    
+    yearly_composition[,i] = x
+  }
+  
+  return(yearly_composition)
+}
+
+
+
+
+
+
+
+
+
+
 
