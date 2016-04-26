@@ -8,7 +8,7 @@ library(magrittr)
 #These are the number of points in transects to average together at each scale. Maxing out at 30 over 11 transects
 spatial_scales=c(2,4,8,10,15,30)
 
-
+results_file='./results/results.csv'
 #######################################
 #Load data
 spp_codes=read.csv('./data/SpeciesCodes.txt', sep='\t') %>%
@@ -237,8 +237,12 @@ run_analysis=function(){
 return(final_results)
 }
 
-results=run_analysis()
-###########################################################
+if(!file.exists(results_file)){
+  results=run_analysis()
+  write.csv(results, results_file, row.names = FALSE)
+} else {
+  print('Results file exists. Delete to rerun analysis')
+}
 
 
 
