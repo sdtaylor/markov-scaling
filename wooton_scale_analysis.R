@@ -73,6 +73,9 @@ for(this_spatial_scale in spatial_scales){
   set_id=set_id+1
 }
 
+model_sets = model_sets %>%
+  filter(replicate >0)
+
 rm(this_spatial_scale, num_replicates, replicate_identifier, this_transect, temp_df,i)
 #####################################
 #Build the matrix model out of the quad data.
@@ -195,13 +198,47 @@ create_composition_timeseries=function(df){
   return(yearly_composition)
 }
 
+###########################################################
+#Iterate through all model sets. making predictions from the model thru time, comparing results
+#and compiling everything in a df
+run_analysis=function(){
+  final_results=data.frame()
+  for(this_set in sort(unique(model_sets$set))){
+    this_set_list = model_sets %>%
+      filter(set==this_set) 
+    
+    for(this_replicate in sort(unique(this_set_list$replicate))){
+      this_replicate_list = this_set_list %>%
+        filter(replicate==this_replicate)
+      
+      this_replicate_point_numbers= this_replicate_list %>%
+        select(Point.Number) %>%
+        distinct() %>%
+        extract2('Point.Number')
+      
+      for(this_transect in unique(this_replicate_list$Transect)){
+        actual_composition=transect_data %>%
+          filter(Transect == this_transect, Point.Number %in% this_replicate_point_numbers) %>%
+          create_composition_timeseries()
+        
+        predicted_composition = run_model(transitions, actual_composition[,1], ncol(actual_composition))
+        results_this_transect=compare_composition(actual_composition, predicted_composition)
+        
+        results_this_transect$Transect=this_transect
+        results_this_transect$set=this_set
+        
+        final_results = final_results %>%
+          bind_rows(results_this_transect)
+      }
+    }
+    
+  }
 
+return(final_results)
+}
 
-
-
-
-
-
+results=run_analysis()
+###########################################################
 
 
 
