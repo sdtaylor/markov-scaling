@@ -6,7 +6,7 @@ library(magrittr)
 #Config
 
 #These are the number of points in transects to average together at each scale. Maxing out at 30 over 11 transects
-spatial_scales=c(2,4,8,10,15,30)
+spatial_scales=c(1,2,3,4,5,6,7,8,9,10,15,20,25,30,35,40,45,50,55,60,65,70)
 
 results_file='./results/results.csv'
 #######################################
