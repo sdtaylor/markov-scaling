@@ -6,9 +6,10 @@ library(magrittr)
 #Config
 
 #These are the number of points in transects to average together at each scale. Maxing out at 30 over 11 transects
+#spatial_scales=c(1,5,10)
 spatial_scales=c(1,2,3,4,5,6,7,8,9,10,15,20,25,30,35,40,45,50,55,60,65,70)
 
-results_file='./results/results.csv'
+results_file='./results/results_wooton.csv'
 #######################################
 #Load data
 spp_codes=read.csv('./data/SpeciesCodes.txt', sep='\t') %>%
@@ -148,6 +149,11 @@ eucl_dist=function(actual, predicted){
   sqrt(sum((actual-predicted)^2))
 }
 
+#R^2 from a 1:1 line
+obs_pred_square=function(actual, predicted){
+  1 - (sum((actual - predicted) ** 2) / sum((actual - mean(actual)) ** 2))
+}
+
 ######################################################
 #Compare precicted and observed timeseries' of composition
 #returns a dataframe of different accuracies over the time series
@@ -158,9 +164,10 @@ compare_composition=function(observed, predicted){
   for(this_col in seq(ncol(observed))){
     this_mse=mse(observed[,this_col], predicted[,this_col])
     this_eucl=eucl_dist(observed[,this_col], predicted[,this_col])
+    this_r2=obs_pred_square(observed[,this_col], predicted[,this_col])
     
     results = results %>%
-      bind_rows(data.frame(timestep=this_col, mse=this_mse, eucl_dist=this_eucl))
+      bind_rows(data.frame(timestep=this_col, mse=this_mse, eucl_dist=this_eucl, r2=this_r2))
   }
   
   return(results)
