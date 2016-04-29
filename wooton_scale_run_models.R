@@ -9,6 +9,9 @@ library(magrittr)
 #spatial_scales=c(1,5,10)
 spatial_scales=c(1,2,3,4,5,6,7,8,9,10,15,20,25,30,35,40,45,50,55,60,65,70)
 
+#The number of years to average together and predict.
+temporal_scales=c(1,2,3)
+
 results_file='./results/results_wooton.csv'
 #######################################
 #Load data
@@ -39,7 +42,10 @@ quad_data=read.csv('./data/Tatoosh_Intertidal_Transitions_Quadrats.txt', sep='\t
   filter(species!='X', !is.na(species)) %>%
   mutate(month=substring(date, 1,3), year=as.integer(substring(date, 5,6))) %>% #make dates usable
   mutate(year=ifelse(year<90, year+2000,year+1900))  %>%
-  select(-date)
+  filter(month %in% c('May','Jul','Jun')) %>%
+  select(-date, -month) %>%
+  mutate(point_id=paste(Quadrat, Point.Letter, Point.Number, sep='-')) %>% #interpret all points independently 
+  select(-Quadrat, -Point.Letter, -Point.Number)
 
 #list of species needed to fill in various things
 all_species=quad_data %>% 
@@ -86,17 +92,12 @@ rm(this_spatial_scale, num_replicates, replicate_identifier, num_points, all_poi
 #####################################
 #Build the matrix model out of the quad data.
 
-#Only doing 1 annual transition instead of the summer/winter transition
-quad_data = quad_data %>%
-  filter(month %in% c('May','Jul','Jun')) %>%
-  select(-month)
-
 quad_data_next_year = quad_data %>%
   mutate(year=year-1) %>%
   rename(species_next_year=species)
   
 transitions_temp = quad_data %>%
-  left_join(quad_data_next_year, by=c('Quadrat','Point.Number','Point.Letter','year')) %>%
+  left_join(quad_data_next_year, by=c('point_id','year')) %>%
   filter(!is.na(species_next_year)) #Some years are missing. Plus the final year can't be included. 
 
 #Get probabilites for each species to each other species
