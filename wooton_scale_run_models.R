@@ -7,10 +7,15 @@ library(magrittr)
 
 #These are the number of points in transects to average together at each scale. Maxing out at 30 over 11 transects
 #spatial_scales=c(1,5,10)
-spatial_scales=c(1,2,3,4,5,6,7,8,9,10,15,20,25,30,35,40,45,50,55,60,65,70)
+#spatial_scales=c(1,2,3,4,5,6,7,8,9,10,15,20,25,30,35,40,45,50,55,60,65,70)
+spatial_scales=c(1,3,5,10,20,30,40,50,60,70)
+
 
 #The temporal scales to average average results over.
-temporal_scales=c(1,2,5,10,19)
+temporal_scales=c(1,2,5,10)
+
+training_years=1993:2000
+testing_years=2002:2012
 
 results_file='./results/results_wooton.csv'
 #######################################
@@ -30,7 +35,8 @@ transect_data=read.csv('./data/Tatoosh_Intertidal_Transitions_Transects.txt', se
   filter(month %in% c('May','Jul','Jun'), year<=2012) %>%
   select(-month, -date) %>%
   mutate(point_id=paste(Transect, Point.Number, sep='-')) %>% #Interpret multiple transects as one giant transect
-  select(-Transect, -Point.Number)
+  select(-Transect, -Point.Number) %>%
+  filter(year %in% testing_years)
 
 #Drop some poorly sampled transect points
 transect_data = transect_data %>%
@@ -48,7 +54,8 @@ quad_data=read.csv('./data/Tatoosh_Intertidal_Transitions_Quadrats.txt', sep='\t
   filter(month %in% c('May','Jul','Jun')) %>%
   select(-date, -month) %>%
   mutate(point_id=paste(Quadrat, Point.Letter, Point.Number, sep='-')) %>% #interpret all points independently 
-  select(-Quadrat, -Point.Letter, -Point.Number)
+  select(-Quadrat, -Point.Letter, -Point.Number) %>%
+  filter(year %in% training_years)
 
 #list of species needed to fill in various things
 all_species=quad_data %>% 
