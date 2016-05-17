@@ -137,6 +137,9 @@ build_transition_matrix=function(training_data){
     select(-species_next_timestep) %>%
     as.matrix()
   
+  #0 probability for transitions that were never observed
+  transitions[is.na(transitions)]=0
+  
   return(transitions)
 }
 
