@@ -259,6 +259,9 @@ apply_temporal_scale=function(composition, temporal_scale){
 }
 
 ###########################################################
+model_types=c('markov','naive')
+
+###########################################################
 #Iterate through all model sets. making predictions from the model thru time, comparing results
 #and compiling everything in a df
 run_analysis=function(){
@@ -289,30 +292,43 @@ run_analysis=function(){
         break
       }
       
-      predicted_composition = run_model(transitions, actual_composition[,1], ncol(actual_composition))
-      
-      #Temporal averaging here
+      initial=actual_composition[,1]
+      num_original_timesteps=ncol(actual_composition)
       actual_composition=apply_temporal_scale(actual_composition, this_temporal_scale)
-      predicted_composition=apply_temporal_scale(predicted_composition, this_temporal_scale)
       
-      results_this_replicate=compare_composition(actual_composition, predicted_composition)
-        
-      
-      results_this_replicate$set=this_set
-      results_this_replicate$replicate=this_replicate
-        
-      final_results = final_results %>%
-        bind_rows(results_this_replicate)
-      
+      for(this_model_type in model_types){
+        if(this_model_type=='markov'){
+          predicted_composition = run_model(transitions, initial, num_original_timesteps)
+        } else if(this_model_type=='naive'){
+          #The naive model is the initial values repeated over the time series. 
+          predicted_composition=matrix(nrow=length(all_species), ncol=num_original_timesteps)
+          for(i in 1:num_original_timesteps){
+            predicted_composition[,i]=initial
+          }
+        }
+        #Temporal averaging here
+        predicted_composition=apply_temporal_scale(predicted_composition, this_temporal_scale)
+          
+        results_this_replicate=compare_composition(actual_composition, predicted_composition)
+          
+        results_this_replicate$set=this_set
+        results_this_replicate$replicate=this_replicate
+        results_this_replicate$model_type=this_model_type
+          
+        final_results = final_results %>%
+          bind_rows(results_this_replicate)
     }
     
   }
 
+  }
   final_results = final_results %>%
     left_join( select(model_sets, set, spatial_scale, temporal_scale) %>% distinct(), by='set') %>%
     filter(!is.na(mse)) #some na values from missing year
   
+  
   return(final_results)
+  
 }
 
 if(!file.exists(results_file)){
