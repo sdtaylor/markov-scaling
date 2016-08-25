@@ -51,10 +51,10 @@ ggplot(results_summarized, aes(x=temporal_scale, y=r2, group=as.factor(spatial_s
   scale_color_brewer(palette = 'Set2') + 
   theme(panel.grid.major = element_line(colour = "gray38"), 
         panel.background = element_rect(fill = "gray95"), 
-        legend.position = "bottom", legend.direction = "horizontal") +
+        legend.position = "right", legend.direction = "vertical") +
   labs(title = "Prediction accuracy \n of intertidal markov model", 
-       x = "Temporal Grain Size", y = "R^2", 
-       colour = "Spatial Grain Size") 
+       x = "Temporal Grain Size (years)", y = "R^2", 
+       colour = " Spatial\n Grain Size\n (pin points)") 
 
 
 ggplot(results_summarized, aes(x=spatial_scale, y=r2, group=as.factor(temporal_scale), color=as.factor(temporal_scale)))+
@@ -63,8 +63,8 @@ ggplot(results_summarized, aes(x=spatial_scale, y=r2, group=as.factor(temporal_s
   scale_color_brewer(palette = 'Set2') + 
   theme(panel.grid.major = element_line(colour = "gray38"), 
         panel.background = element_rect(fill = "gray95"), 
-        legend.position = "bottom", legend.direction = "horizontal") +
+        legend.position = "right", legend.direction = "vertical") +
   labs(title = "Prediction accuracy \n of intertidal markov model", 
-       x = "Spatial Grain Size", y = "R^2", 
-       colour = "Temporal Grain Size") 
+       x = "Spatial Grain Size (pin points)", y = "R^2", 
+       colour = " Temporal\n Grain Size\n (years)") 
 
