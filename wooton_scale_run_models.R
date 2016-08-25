@@ -173,7 +173,10 @@ eucl_dist=function(actual, predicted){
 }
 
 #R^2 from a 1:1 line
+#log transform because Marks & Muller-Landau 2007: 10.1126/science.1140190 
 obs_pred_square=function(actual, predicted){
+  actual=log1p(actual)
+  predicted=log1p(predic)
   1 - (sum((actual - predicted) ** 2) / sum((actual - mean(actual)) ** 2))
 }
 
