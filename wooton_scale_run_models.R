@@ -10,16 +10,17 @@ library(magrittr)
 #spatial_scales=c(1,2,3,4,5,6,7,8,9,10,15,20,25,30,35,40,45,50,55,60,65,70)
 spatial_scales=c(1,3,5,10,20,30,40,50,60,70)
 
-
 #The temporal scales to average average results over.
 temporal_scales=c(1,2,5,10)
 
 training_years=1993:2000
-testing_years=2002:2012
+testing_year_initial=2002
+testing_years=2003:2012
 
 results_file='./results/results_wooton.csv'
 #######################################
-#Load data
+#Load data. Quadrat data from training_years will be used to fit the models. 
+#Transect data from testing_years will be used to verify it. 
 spp_codes=read.csv('./data/SpeciesCodes.txt', sep='\t') %>%
   select(CODE, AGGREGATED.GROUP)
 
@@ -32,11 +33,11 @@ transect_data=read.csv('./data/Tatoosh_Intertidal_Transitions_Transects.txt', se
   filter(species!='X', !is.na(species)) %>%
   mutate(month=substring(date, 1,3), year=as.integer(substring(date, 5,6))) %>% #Make dates usuable
   mutate(year=ifelse(year<90, year+2000,year+1900)) %>%
-  filter(month %in% c('May','Jul','Jun'), year<=2012) %>%
+  filter(month %in% c('May','Jul','Jun'), year<=2012) %>% #Only use summer census data
   select(-month, -date) %>%
   mutate(point_id=paste(Transect, Point.Number, sep='-')) %>% #Interpret multiple transects as one giant transect
   select(-Transect, -Point.Number) %>%
-  filter(year %in% testing_years)
+  filter((year %in% testing_years) | (year == testing_year_initial))
 
 #Drop some poorly sampled transect points
 transect_data = transect_data %>%
@@ -63,9 +64,13 @@ all_species=quad_data %>%
   distinct() %>%
   arrange() %>%
   extract2('species')
+all_species = sort(as.character(all_species))
 #######################################
 #Setup the spatial scales to model at
-
+#A set is a single combination of spatial and temporal grain
+#Within a set are replicates of which each point is assigned to.
+#At the smallest grain the number of points = the  number of replicates. 
+#At the largest grain there is a single replicate which all points as aggregated into.
 set_id=1
 model_sets=data.frame()
 all_point_ids=sort(unique(transect_data$point_id))
@@ -88,7 +93,7 @@ for(this_spatial_scale in spatial_scales){
   #Repeat for every temporal scale
   for(this_temporal_scale in temporal_scales){
     
-    temp_df=data.frame(point_id=all_point_ids, replicate=replicate_identifier,
+    temp_df=data.frame(point_id=all_point_ids, spatial_replicate=replicate_identifier,
                        'spatial_scale'=this_spatial_scale, 'temporal_scale'=this_temporal_scale,
                        set=set_id)
     model_sets = model_sets %>%
@@ -100,7 +105,31 @@ for(this_spatial_scale in spatial_scales){
 }
 
 model_sets = model_sets %>%
-  filter(replicate >0)
+  filter(spatial_replicate >0)
+
+#Do the same  thing with the testing years, assigning each year to a temporal replicate for each grain size
+temporal_model_sets = data.frame()
+num_timesteps = length(testing_years)
+for(this_temporal_scale in temporal_scales){
+  num_replicates = floor(num_timesteps/this_temporal_scale)  
+
+  replicate_identifier=c()
+  for(i in 1:this_temporal_scale){
+    replicate_identifier = c(replicate_identifier, 1:num_replicates)
+  }
+  replicate_identifier = sort(replicate_identifier)
+  
+  while(length(replicate_identifier)<num_timesteps){
+    replicate_identifier = c(replicate_identifier, -99)
+  }
+  
+  temp_df = data.frame(year = testing_years, 
+                       temporal_replicate = replicate_identifier,
+                       temporal_scale = this_temporal_scale)
+  
+  temporal_model_sets = temporal_model_sets %>%
+    bind_rows(temp_df)
+}
 
 rm(this_spatial_scale, this_temporal_scale, num_replicates, replicate_identifier, num_points, all_point_ids, temp_df,i)
 #####################################
@@ -159,6 +188,41 @@ run_model=function(model, initial_conditions, timesteps){
   return(results)
 }
 
+#########################################################
+#Use a monte-carlo method for estimating the cover of a single
+#point across the timeseries of the testing data.
+#Returns, for each timestep in the future, the probability that
+#the point will be of each class. 
+filler = expand.grid(timestep = 1:(length(testing_years)),
+                     species = all_species)
+
+run_single_point_model = function(initial_species, model){
+  num_monte_carlo_runs=500
+  results = data.frame()
+  for(i in 1:num_monte_carlo_runs) {
+    present_species = initial_species
+    for(timestep in 1:(length(testing_years)-1)){
+      next_species_probabilites = model[,present_species]
+      present_species = sample(all_species, 1, prob = next_species_probabilites)
+      results = results %>%
+        bind_rows(data.frame(timestep=timestep,
+                             species=present_species,
+                             markov_run=i))
+    }
+  }
+  
+  results = results %>%
+    group_by(timestep) %>%
+    count(species) %>%
+    mutate(species_cover = n/num_monte_carlo_runs) %>%
+    select(-n)
+  
+  #Fill in low probability species.
+  results = results %>%
+    right_join(filler, by=c('timestep','species')) %>%
+    mutate(species_cover = ifelse(is.na(species_cover), 0, species_cover))
+}
+
 ######################################################
 #Metrics for composition comparison
 
@@ -176,158 +240,134 @@ eucl_dist=function(actual, predicted){
 #log transform because Marks & Muller-Landau 2007: 10.1126/science.1140190 
 obs_pred_square=function(actual, predicted){
   actual=log1p(actual)
-  predicted=log1p(predic)
+  predicted=log1p(predicted)
   1 - (sum((actual - predicted) ** 2) / sum((actual - mean(actual)) ** 2))
 }
 
-######################################################
-#Compare precicted and observed timeseries' of composition
-#returns a dataframe of different accuracies over the time series
-compare_composition=function(observed, predicted){
-  if(!all(dim(observed)==dim(predicted))){stop('observed and predicted rows and/or columns do not match')}
-  
-  results=data.frame()
-  for(this_col in seq(ncol(observed))){
-    this_mse=mse(observed[,this_col], predicted[,this_col])
-    this_eucl=eucl_dist(observed[,this_col], predicted[,this_col])
-    this_r2=obs_pred_square(observed[,this_col], predicted[,this_col])
-    
-    results = results %>%
-      bind_rows(data.frame(timestep=this_col, mse=this_mse, eucl_dist=this_eucl, r2=this_r2))
-  }
-  
-  return(results)
-}
+##########################################################
+#Scoring function
 
-#####################################################
-#Create a matrix time series of actual compostion for a community given a dataframe
-#subset of transect_data
-
-create_composition_timeseries=function(df){
-  #A list of years that includes missing ones
-  years = min(df$year):max(df$year)
+score_observed_vs_predicted = function(observed, predicted){
+  predicted = predicted %>%
+    rename(species_cover_predicted = species_cover)
   
-  yearly_composition=matrix(nrow=length(all_species), ncol=length(years))
-  colnames(yearly_composition) = years
-
-  for(i in seq_along(years)){
-    this_year=years[i]
-    x=df %>%
-      filter(year==this_year)
-    
-    #Put in NA's for missing years
-    if(nrow(x)==0){
-      x=rep(NA, length(all_species))
-    } else {
-      x = x %>%
-        group_by(species) %>%
-        summarize(n=n()) %>%
-        ungroup() %>%
-        mutate(percent_cover=n/sum(n)) %>% #Percent cover of species actually present
-        right_join(data.frame(species=all_species), by='species') %>% #Add in the rest of the species and fill in 0's for cover
-        mutate(percent_cover = ifelse(is.na(percent_cover), 0, percent_cover)) %>%
-        arrange(species) %>%
-        extract2('percent_cover')
-    }
-    
-    yearly_composition[,i] = x
-  }
+  both = observed %>%
+    left_join(predicted, by=c('spatial_replicate','temporal_replicate','species')) %>%
+    group_by(spatial_replicate, temporal_replicate) %>%
+    summarize(r2=obs_pred_square(actual = species_cover, predicted = species_cover_predicted)) %>%
+    ungroup()
   
-  return(yearly_composition)
-}
-
-###########################################################
-#Temporal scales. Take the output from timesteps of 1 year, and average predictions and observations
-#over sets of n years
-apply_temporal_scale=function(composition, temporal_scale){
-  if(temporal_scale==1){
-    return(composition)
-  }
-  
-  new_num_cols=floor(ncol(composition) / temporal_scale)
-  
-  new_matrix=matrix(nrow=nrow(composition), ncol=new_num_cols)
-  
-  #If na data is present (from missing years), don't do averages for smaller time scales
-  if(temporal_scale < 4){excludeNA=FALSE} else {excludeNA=TRUE}
-  
-  for(i in seq(new_num_cols)){
-    original_timesteps_to_include = ((temporal_scale*i)-temporal_scale+1) : (temporal_scale*i)
-    new_matrix[,i] = rowMeans(composition[,original_timesteps_to_include], na.rm=excludeNA)
-    
-  }
-  colnames(new_matrix) = 1:new_num_cols
-  return(new_matrix)
+  return(mean(both$r2))
   
 }
 
 ###########################################################
-model_types=c('markov','naive')
+#Upscaling functions, used for both predictions and observations
+
+spatial_aggregate = function(df, set_list){
+  spatial_set_list = set_list %>%
+    select(point_id, spatial_replicate)
+  
+  df = df %>%
+    left_join(spatial_set_list, by='point_id') %>%
+    group_by(spatial_replicate, timestep, species) %>%
+    summarise(species_cover = mean(species_cover)) %>%
+    ungroup()
+  
+  return(df)
+}
+
+temporal_aggregate = function(df, set_list){
+  temporal_set_list = set_list %>%
+    select(timestep, temporal_replicate)
+  
+  df = df %>%
+    left_join(temporal_set_list, by='timestep') %>%
+    group_by(spatial_replicate, temporal_replicate, species) %>%
+    summarise(species_cover = mean(species_cover)) %>%
+    ungroup()
+
+  return(df)
+}
+
 
 ###########################################################
 #Iterate through all model sets. making predictions from the model thru time, comparing results
 #and compiling everything in a df
 run_analysis=function(){
   
-  transitions=build_transition_matrix(quad_data)
+  markov_model=build_transition_matrix(quad_data)
   
-  final_results=data.frame()
+  timeseries_prediction = data.frame()
+  timeseries_actual = data.frame()
+  
+  timestep_to_year = data.frame(timestep=1:(length(testing_years)),
+                                year=testing_years)
+  
+  #The initial conditions of each point to start the model with. 
+  initial_conditions = transect_data %>%
+    filter(year==testing_year_initial)
+  #The observations to compar model predictions with
+  testing_data = transect_data %>%
+    filter(year %in% testing_years)
+  
+  #For each point in the test dataset, run the monte-carlo simulation using the markov
+  #model to get estimates of cover at each timestep in the future.
+  #TODO: Parallelization should be put in here if I feel the need
+  for(this_point_id in unique(transect_data$point_id)){
+    point_data = testing_data %>%
+      filter(point_id==this_point_id) %>%
+      left_join(timestep_to_year, by='year') %>%
+      select(-year)
+    initial_species = initial_conditions$species[initial_conditions$point_id==this_point_id]
+    point_timeseries_prediction = run_single_point_model(initial_species, markov_model)
+    point_timeseries_prediction$point_id = this_point_id
+    
+    timeseries_prediction = timeseries_prediction %>%
+      bind_rows(point_timeseries_prediction)
+    
+    #Add in zeros to observation data
+    point_data = point_data %>%
+      mutate(species_cover = 1.0) %>%
+      right_join(filler, by=c('timestep','species')) %>%
+      mutate(species_cover = ifelse(is.na(species_cover), 0, species_cover))
+    point_data$point_id = this_point_id
+    
+    timeseries_actual = timeseries_actual %>%
+      bind_rows(point_data)
+  }
+  
+  #For each combination of spatial and temporal grain sizes, aggregate the results and
+  #get an accuracy metrics.
+  final_results = data.frame()
   for(this_set in sort(unique(model_sets$set))){
     this_set_list = model_sets %>%
       filter(set==this_set) 
     
     this_spatial_scale = unique(this_set_list$spatial_scale)
     this_temporal_scale = unique(this_set_list$temporal_scale)
-    for(this_replicate in sort(unique(this_set_list$replicate))){
-
-      this_replicate_point_ids= this_set_list %>%
-        filter(replicate==this_replicate) %>%
-        select(point_id) %>%
-        distinct() %>%
-        extract2('point_id')
-      
-      actual_composition=transect_data %>%
-        filter(point_id %in% this_replicate_point_ids) %>%
-        create_composition_timeseries()
-      
-      #Some of spatial subsets aren't sampled across the entire time series.   
-      if(ncol(actual_composition) < this_temporal_scale){
-        break
-      }
-      
-      initial=actual_composition[,1]
-      num_original_timesteps=ncol(actual_composition)
-      actual_composition=apply_temporal_scale(actual_composition, this_temporal_scale)
-      
-      for(this_model_type in model_types){
-        if(this_model_type=='markov'){
-          predicted_composition = run_model(transitions, initial, num_original_timesteps)
-        } else if(this_model_type=='naive'){
-          #The naive model is the initial values repeated over the time series. 
-          predicted_composition=matrix(nrow=length(all_species), ncol=num_original_timesteps)
-          for(i in 1:num_original_timesteps){
-            predicted_composition[,i]=initial
-          }
-        }
-        #Temporal averaging here
-        predicted_composition=apply_temporal_scale(predicted_composition, this_temporal_scale)
-          
-        results_this_replicate=compare_composition(actual_composition, predicted_composition)
-          
-        results_this_replicate$set=this_set
-        results_this_replicate$replicate=this_replicate
-        results_this_replicate$model_type=this_model_type
-          
-        final_results = final_results %>%
-          bind_rows(results_this_replicate)
-    }
+    
+    #Aggregate in space
+    this_set_predictions = spatial_aggregate(timeseries_prediction, this_set_list)
+    this_set_observations = spatial_aggregate(timeseries_actual, this_set_list)
+    
+    #Aggregate in time
+    this_temporal_set_list = temporal_model_sets %>%
+      filter(temporal_scale == this_temporal_scale) %>%
+      left_join(timestep_to_year, by='year')
+    this_set_predictions = temporal_aggregate(this_set_predictions, this_temporal_set_list)
+    this_set_observations = temporal_aggregate(this_set_observations, this_temporal_set_list)
+    
+    results_this_set = data.frame(temporal_scale = this_temporal_scale,
+                                  spatial_scale = this_spatial_scale, 
+                                  r2 = score_observed_vs_predicted(this_set_observations, this_set_predictions))
+    
+    final_results = final_results %>%
+      bind_rows(results_this_set)
+    
     
   }
-
-  }
-  final_results = final_results %>%
-    left_join( select(model_sets, set, spatial_scale, temporal_scale) %>% distinct(), by='set') %>%
-    filter(!is.na(mse)) #some na values from missing year
+  
   
   
   return(final_results)
