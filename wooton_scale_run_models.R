@@ -41,7 +41,7 @@ transect_data=read.csv('./data/Tatoosh_Intertidal_Transitions_Transects.txt', se
 
 #Drop some poorly sampled transect points
 transect_data = transect_data %>%
-  filter(!point_id %in% c('SFN-18','ES-12','LF-25'))
+  filter(!point_id %in% c('SFN-18','ES-12','LF-25','G-10'))
 
 quad_data=read.csv('./data/Tatoosh_Intertidal_Transitions_Quadrats.txt', sep='\t') %>%
   select(-X) %>%
