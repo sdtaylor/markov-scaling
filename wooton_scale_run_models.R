@@ -1,6 +1,7 @@
 library(dplyr)
 library(tidyr)
 library(magrittr)
+library(doParallel)
 
 #######################################
 #Config
@@ -18,6 +19,8 @@ testing_year_initial=2002
 testing_years=2003:2012
 
 results_file='./results/results_wooton.csv'
+
+num_procs = 2
 #######################################
 #Load data. Quadrat data from training_years will be used to fit the models. 
 #Transect data from testing_years will be used to verify it. 
@@ -188,6 +191,11 @@ run_model=function(model, initial_conditions, timesteps){
   return(results)
 }
 
+###################################################################
+#Setup parallel processing
+
+registerDoParallel(makeCluster(num_procs))
+
 #########################################################
 #Use a monte-carlo method for estimating the cover of a single
 #point across the timeseries of the testing data.
@@ -198,16 +206,17 @@ filler = expand.grid(timestep = 1:(length(testing_years)),
 
 run_single_point_model = function(initial_species, model){
   num_monte_carlo_runs=500
-  results = data.frame()
-  for(i in 1:num_monte_carlo_runs) {
+  #results = data.frame()
+  results = foreach(i = 1:num_monte_carlo_runs, .combine = rbind, .packages = c('dplyr'),
+                    .export=c('testing_years','filler','all_species')) %dopar% {
+  #for(i in 1:num_monte_carlo_runs) {
     present_species = initial_species
     for(timestep in 1:(length(testing_years)-1)){
       next_species_probabilites = model[,present_species]
       present_species = sample(all_species, 1, prob = next_species_probabilites)
-      results = results %>%
-        bind_rows(data.frame(timestep=timestep,
-                             species=present_species,
-                             markov_run=i))
+      return(data.frame(timestep=timestep,
+                        species=present_species,
+                        markov_run=i))
     }
   }
   
@@ -290,7 +299,6 @@ temporal_aggregate = function(df, set_list){
   return(df)
 }
 
-
 ###########################################################
 #Iterate through all model sets. making predictions from the model thru time, comparing results
 #and compiling everything in a df
@@ -313,7 +321,6 @@ run_analysis=function(){
   
   #For each point in the test dataset, run the monte-carlo simulation using the markov
   #model to get estimates of cover at each timestep in the future.
-  #TODO: Parallelization should be put in here if I feel the need
   for(this_point_id in unique(transect_data$point_id)){
     point_data = testing_data %>%
       filter(point_id==this_point_id) %>%
