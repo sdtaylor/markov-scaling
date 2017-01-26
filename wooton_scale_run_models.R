@@ -1,7 +1,7 @@
 library(dplyr)
 library(tidyr)
 library(magrittr)
-
+library(doParallel)
 #######################################
 #Config
 
@@ -18,6 +18,8 @@ testing_year_initial=2002
 testing_years=2003:2012
 
 results_file='./results/results_wooton.csv'
+
+num_procs=2
 #######################################
 #Load data. Quadrat data from training_years will be used to fit the models. 
 #Transect data from testing_years will be used to verify it. 
@@ -65,6 +67,10 @@ all_species=quad_data %>%
   arrange() %>%
   extract2('species')
 all_species = sort(as.character(all_species))
+
+#The unique upoints in the testing dataset
+all_point_ids=sort(unique(transect_data$point_id))
+
 #######################################
 #Setup the spatial scales to model at
 #A set is a single combination of spatial and temporal grain
@@ -73,7 +79,6 @@ all_species = sort(as.character(all_species))
 #At the largest grain there is a single replicate which all points as aggregated into.
 set_id=1
 model_sets=data.frame()
-all_point_ids=sort(unique(transect_data$point_id))
 num_points=length(all_point_ids)
 
 for(this_spatial_scale in spatial_scales){
@@ -131,7 +136,7 @@ for(this_temporal_scale in temporal_scales){
     bind_rows(temp_df)
 }
 
-rm(this_spatial_scale, this_temporal_scale, num_replicates, replicate_identifier, num_points, all_point_ids, temp_df,i)
+rm(this_spatial_scale, this_temporal_scale, num_replicates, replicate_identifier, num_points, temp_df,i)
 #####################################
 #Build the markov matrix model 
 # training_data is a df of c('point_id','species','year')
@@ -201,7 +206,7 @@ run_single_point_model = function(initial_species, model){
   results = data.frame()
   for(i in 1:num_monte_carlo_runs) {
     present_species = initial_species
-    for(timestep in 1:(length(testing_years)-1)){
+    for(timestep in 1:(length(testing_years))){
       next_species_probabilites = model[,present_species]
       present_species = sample(all_species, 1, prob = next_species_probabilites)
       results = results %>%
@@ -290,6 +295,9 @@ temporal_aggregate = function(df, set_list){
   return(df)
 }
 
+###################################################################
+#Setup parallel processing
+registerDoParallel(makeCluster(num_procs))
 
 ###########################################################
 #Iterate through all model sets. making predictions from the model thru time, comparing results
@@ -297,9 +305,6 @@ temporal_aggregate = function(df, set_list){
 run_analysis=function(){
   
   markov_model=build_transition_matrix(quad_data)
-  
-  timeseries_prediction = data.frame()
-  timeseries_actual = data.frame()
   
   timestep_to_year = data.frame(timestep=1:(length(testing_years)),
                                 year=testing_years)
@@ -313,19 +318,22 @@ run_analysis=function(){
   
   #For each point in the test dataset, run the monte-carlo simulation using the markov
   #model to get estimates of cover at each timestep in the future.
-  #TODO: Parallelization should be put in here if I feel the need
+  timeseries_prediction = foreach(this_point_id = all_point_ids, .combine = rbind, .packages=c('dplyr')) %dopar% {
+    
+    initial_species = initial_conditions$species[initial_conditions$point_id==this_point_id]
+    point_timeseries_prediction = run_single_point_model(initial_species, markov_model)
+    point_timeseries_prediction$point_id = this_point_id
+    return(point_timeseries_prediction)
+  }
+  
+  #For each point compile the true observations
+  timeseries_actual = data.frame()
   for(this_point_id in unique(transect_data$point_id)){
     point_data = testing_data %>%
       filter(point_id==this_point_id) %>%
       left_join(timestep_to_year, by='year') %>%
       select(-year)
-    initial_species = initial_conditions$species[initial_conditions$point_id==this_point_id]
-    point_timeseries_prediction = run_single_point_model(initial_species, markov_model)
-    point_timeseries_prediction$point_id = this_point_id
-    
-    timeseries_prediction = timeseries_prediction %>%
-      bind_rows(point_timeseries_prediction)
-    
+
     #Add in zeros to observation data
     point_data = point_data %>%
       mutate(species_cover = 1.0) %>%
