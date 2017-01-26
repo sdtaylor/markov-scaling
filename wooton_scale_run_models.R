@@ -257,8 +257,8 @@ score_observed_vs_predicted = function(observed, predicted){
     summarize(r2=obs_pred_square(actual = species_cover, predicted = species_cover_predicted)) %>%
     ungroup()
   
-  return(mean(both$r2))
-  
+  #return(mean(both$r2))
+  return(both)
 }
 
 ###########################################################
@@ -358,9 +358,9 @@ run_analysis=function(){
     this_set_predictions = temporal_aggregate(this_set_predictions, this_temporal_set_list)
     this_set_observations = temporal_aggregate(this_set_observations, this_temporal_set_list)
     
-    results_this_set = data.frame(temporal_scale = this_temporal_scale,
-                                  spatial_scale = this_spatial_scale, 
-                                  r2 = score_observed_vs_predicted(this_set_observations, this_set_predictions))
+    results_this_set = score_observed_vs_predicted(this_set_observations, this_set_predictions)
+    results_this_set$temporal_scale = this_temporal_scale
+    results_this_set$spatial_scale = this_spatial_scale
     
     final_results = final_results %>%
       bind_rows(results_this_set)
