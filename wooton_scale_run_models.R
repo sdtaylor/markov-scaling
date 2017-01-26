@@ -318,7 +318,8 @@ run_analysis=function(){
   
   #For each point in the test dataset, run the monte-carlo simulation using the markov
   #model to get estimates of cover at each timestep in the future.
-  timeseries_prediction = foreach(this_point_id = all_point_ids, .combine = rbind, .packages=c('dplyr')) %dopar% {
+  timeseries_prediction = foreach(this_point_id = all_point_ids, .combine = rbind, .packages=c('dplyr'),
+                                  .export = c('run_single_point_model','testing_years','all_species','filler')) %dopar% {
     
     initial_species = initial_conditions$species[initial_conditions$point_id==this_point_id]
     point_timeseries_prediction = run_single_point_model(initial_species, markov_model)
