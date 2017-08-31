@@ -109,4 +109,4 @@ scaled_predictions = scaled_predictions %>%
          threshold_predicted = count_predicted >= count_threshold) %>%
   left_join(outcomes, by=c('threshold_actual','threshold_predicted'))
 
-write.csv(results, results_file, row.names = FALSE)
+write.csv(scaled_predictions, results_file, row.names = FALSE)
