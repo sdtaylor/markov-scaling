@@ -10,7 +10,7 @@ testing_years = 2003:2012
 #some action has to be taken
 count_threshold = 18
 
-results_file='./results/results_wooton.csv'
+results_file='./results/results_intertidal.csv'
 
 ###################################################
 #Prepare a lookup scale of how to aggregate the different years
